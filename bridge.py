@@ -175,11 +175,11 @@ def _default_branch(repo_path: str) -> str:
     Priority:
       1. DEFAULT_BRANCH env var (from agent/.env)
       2. agent_config.DEFAULT_BRANCH (hardcoded fallback)
-      3. First of main that actually exists in the repo
+      3. First of master/main that actually exists in the repo
     """
     # Check env first
     env_branch = os.getenv("DEFAULT_BRANCH", "").strip()
-    candidates = [b for b in [env_branch, agent_config.DEFAULT_BRANCH, "main"] if b]
+    candidates = [b for b in [env_branch, agent_config.DEFAULT_BRANCH, "master", "main"] if b]
 
     for branch in candidates:
         _, code = _run_git(["rev-parse", "--verify", branch], repo_path)
@@ -356,6 +356,15 @@ def _commit_entity_to_branch(
     if code != 0:
         raise RuntimeError(f"git commit failed: {out}")
     print(f"[bridge] Committed: {out.splitlines()[0]}")
+
+    # Switch back to base branch so the working branch stays clean
+    print(f"[bridge] Switching back to '{base}'...")
+    out, code = _run_git(["checkout", base], repo_path)
+    if code != 0:
+        print(f"[bridge] WARNING: could not switch back to '{base}': {out}")
+    else:
+        print(f"[bridge] Now on '{base}'. ✓")
+
     return {"done": True}
 
 
@@ -625,6 +634,16 @@ def _run_collect_flow(args: argparse.Namespace) -> int:
     _print_manifest(entities_dir)
 
     print(f"\n✓ collect flow complete. Branch '{target}' is ready.")
+
+    # Switch back to default branch so working tree stays clean
+    base = args.base_branch or _default_branch(repo_path)
+    print(f"[collect] Switching back to '{base}'...")
+    out, code = _run_git(["checkout", base], repo_path)
+    if code == 0:
+        print(f"[collect] Now on '{base}'. ✓")
+    else:
+        print(f"[collect] WARNING: could not switch back to '{base}': {out}")
+
     return 0
 
 

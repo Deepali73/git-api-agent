@@ -1,0 +1,314 @@
+{
+  "entity": "Action",
+  "mode": "create",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "serviceId": {
+        "type": "string",
+        "description": "Service ID; linked resource: apiBuilderService.Service"
+      },
+      "name": {
+        "type": "string",
+        "description": "Name; transformations: camelCase"
+      },
+      "title": {
+        "type": "string",
+        "description": "Title; transformations: titleCase"
+      },
+      "method": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": ["get", "post", "put", "delete"],
+            "description": "Method",
+            "default": "get"
+          },
+          { "type": "null" }
+        ],
+        "description": "Method"
+      },
+      "path": { "type": "string", "description": "Path" },
+      "code": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Code; format: autoIncrement",
+            "default": 1
+          },
+          { "type": "null" }
+        ],
+        "description": "Code; format: autoIncrement"
+      },
+      "accessType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": ["protected", "public", "private"],
+            "description": "Access Type",
+            "default": "protected"
+          },
+          { "type": "null" }
+        ],
+        "description": "Access Type"
+      },
+      "timeout": {
+        "anyOf": [
+          { "type": "number", "description": "Timeout", "default": 60000 },
+          { "type": "null" }
+        ],
+        "description": "Timeout"
+      },
+      "cacheTime": {
+        "anyOf": [
+          { "type": "number", "description": "Cache Time", "default": 0 },
+          { "type": "null" }
+        ],
+        "description": "Cache Time"
+      },
+      "staleCacheTime": {
+        "anyOf": [
+          { "type": "number", "description": "Stale Cache Time", "default": 0 },
+          { "type": "null" }
+        ],
+        "description": "Stale Cache Time"
+      },
+      "isLogEnabled": {
+        "anyOf": [
+          {
+            "type": "boolean",
+            "description": "Is Log Enabled",
+            "default": true
+          },
+          { "type": "null" }
+        ],
+        "description": "Is Log Enabled"
+      },
+      "isActive": {
+        "anyOf": [
+          { "type": "boolean", "description": "Is Active", "default": true },
+          { "type": "null" }
+        ],
+        "description": "Is Active"
+      },
+      "description": {
+        "anyOf": [
+          { "type": "string", "maxLength": 1000, "description": "Description" },
+          { "type": "null" }
+        ],
+        "description": "Description"
+      },
+      "requestQueryId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Request Query ID; linked resource: apiBuilderService.ValueType"
+          },
+          { "type": "null" }
+        ],
+        "description": "Request Query ID; linked resource: apiBuilderService.ValueType"
+      },
+      "requestParamId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Request Param ID; linked resource: apiBuilderService.ValueType"
+          },
+          { "type": "null" }
+        ],
+        "description": "Request Param ID; linked resource: apiBuilderService.ValueType"
+      },
+      "requestBodyId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Request Body ID; linked resource: apiBuilderService.ValueType"
+          },
+          { "type": "null" }
+        ],
+        "description": "Request Body ID; linked resource: apiBuilderService.ValueType"
+      },
+      "requestHeaderId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Request Header ID; linked resource: apiBuilderService.ValueType"
+          },
+          { "type": "null" }
+        ],
+        "description": "Request Header ID; linked resource: apiBuilderService.ValueType"
+      },
+      "responseBodyId": {
+        "type": "string",
+        "description": "Response Body ID; linked resource: apiBuilderService.ValueType"
+      },
+      "responseHeaderId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Response Header ID; linked resource: apiBuilderService.ValueType"
+          },
+          { "type": "null" }
+        ],
+        "description": "Response Header ID; linked resource: apiBuilderService.ValueType"
+      },
+      "requestFileMetaData": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mimetypes": {
+                "type": "array",
+                "items": { "type": "string", "description": "Mimetypes" },
+                "description": "Mimetypes"
+              },
+              "key": {
+                "anyOf": [
+                  { "type": "string", "description": "Key", "default": "file" },
+                  { "type": "null" }
+                ],
+                "description": "Key"
+              },
+              "maxSizeInMb": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 100,
+                    "description": "Max Size In Mb",
+                    "default": 10
+                  },
+                  { "type": "null" }
+                ],
+                "description": "Max Size In Mb"
+              },
+              "count": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Count",
+                    "default": 1
+                  },
+                  { "type": "null" }
+                ],
+                "description": "Count"
+              }
+            },
+            "required": ["mimetypes"],
+            "additionalProperties": false,
+            "description": "Request File Meta Data; child entity: FileMetaData"
+          },
+          { "type": "null" }
+        ],
+        "description": "Request File Meta Data; child entity: FileMetaData"
+      },
+      "responseFileMetaData": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mimetypes": {
+                "type": "array",
+                "items": { "type": "string", "description": "Mimetypes" },
+                "description": "Mimetypes"
+              },
+              "key": {
+                "anyOf": [
+                  { "type": "string", "description": "Key", "default": "file" },
+                  { "type": "null" }
+                ],
+                "description": "Key"
+              },
+              "maxSizeInMb": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 100,
+                    "description": "Max Size In Mb",
+                    "default": 10
+                  },
+                  { "type": "null" }
+                ],
+                "description": "Max Size In Mb"
+              },
+              "count": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Count",
+                    "default": 1
+                  },
+                  { "type": "null" }
+                ],
+                "description": "Count"
+              }
+            },
+            "required": ["mimetypes"],
+            "additionalProperties": false,
+            "description": "Response File Meta Data; child entity: FileMetaData"
+          },
+          { "type": "null" }
+        ],
+        "description": "Response File Meta Data; child entity: FileMetaData"
+      }
+    },
+    "required": ["serviceId", "name", "title", "path", "responseBodyId"],
+    "additionalProperties": false
+  },
+  "samplePayload": {
+    "serviceId": "",
+    "name": "",
+    "title": "",
+    "method": "get",
+    "path": "",
+    "code": 1,
+    "accessType": "protected",
+    "timeout": 60000,
+    "cacheTime": 0,
+    "staleCacheTime": 0,
+    "isLogEnabled": true,
+    "isActive": true,
+    "description": null,
+    "requestQueryId": null,
+    "requestParamId": null,
+    "requestBodyId": null,
+    "requestHeaderId": null,
+    "responseBodyId": "",
+    "responseHeaderId": null,
+    "requestFileMetaData": null,
+    "responseFileMetaData": null
+  },
+  "links": {
+    "serviceId": { "service": "apiBuilderService", "resource": "Service" },
+    "requestQueryId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    },
+    "requestParamId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    },
+    "requestBodyId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    },
+    "requestHeaderId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    },
+    "responseBodyId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    },
+    "responseHeaderId": {
+      "service": "apiBuilderService",
+      "resource": "ValueType"
+    }
+  }
+}

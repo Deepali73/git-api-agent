@@ -1,0 +1,35 @@
+.venv/
+venv/
+.env
+__pycache__/
+
+
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+.cursorignore
+.DS_Store
+
+# Virtual environments
+.venv
+.env
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Data files
+temp/
+z.*
+ 
+#node modules
+node_modules/
+
+.langgraph_api/

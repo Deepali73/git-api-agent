@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--flow",
-        choices=["backend", "git", "combined", "collect"],
+        choices=["backend", "git", "combined", "collect", "manifest"],
         default="combined",
         help="Which flow to run (default: combined).",
     )
@@ -170,13 +170,25 @@ def _run_git(args: list[str], cwd: str) -> tuple[str, int]:
 
 
 def _default_branch(repo_path: str) -> str:
-    _gc_spec = _ilu.spec_from_file_location(
-        "git_context", os.path.join(_AGENT_DIR, "git_context.py")
-    )
-    _gc_mod = _ilu.module_from_spec(_gc_spec)
-    _gc_spec.loader.exec_module(_gc_mod)
-    ctx = _gc_mod.gather_repo_context(repo_path)
-    return ctx.get("default_branch") or "master"
+    """
+    Determine the default base branch for this repo.
+    Priority:
+      1. DEFAULT_BRANCH env var (from agent/.env)
+      2. agent_config.DEFAULT_BRANCH (hardcoded fallback)
+      3. First of main that actually exists in the repo
+    """
+    # Check env first
+    env_branch = os.getenv("DEFAULT_BRANCH", "").strip()
+    candidates = [b for b in [env_branch, agent_config.DEFAULT_BRANCH, "main"] if b]
+
+    for branch in candidates:
+        _, code = _run_git(["rev-parse", "--verify", branch], repo_path)
+        if code == 0:
+            return branch
+
+    # Last resort — use whatever HEAD is on
+    out, _ = _run_git(["branch", "--show-current"], repo_path)
+    return out.strip() or "master"
 
 
 def _parse_commit_selectors(commits_args: list[str] | None) -> dict[str, list[int]]:
@@ -201,6 +213,92 @@ def _parse_commit_selectors(commits_args: list[str] | None) -> dict[str, list[in
 
 
 # ---------------------------------------------------------------------------
+# Manifest helpers  — entities/manifest.json tracks every entity + branch
+# ---------------------------------------------------------------------------
+
+import datetime
+
+MANIFEST_FILENAME = "manifest.json"
+
+
+def _read_manifest(entities_dir: str) -> dict:
+    """Read existing manifest or return empty structure."""
+    path = os.path.join(entities_dir, MANIFEST_FILENAME)
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"entities": [], "branch_map": {}}
+
+
+def _write_manifest(entities_dir: str, manifest: dict) -> str:
+    """Write manifest and return its path."""
+    path = os.path.join(entities_dir, MANIFEST_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    return path
+
+
+def _update_manifest(
+    entities_dir: str,
+    entity_name: str,
+    entity_id: str,
+    branch: str,
+    filename: str,
+    operation: str = "create",
+    source_branch: str | None = None,
+) -> str:
+    """
+    Add or update an entry in the manifest.
+    Returns the manifest file path.
+    """
+    manifest = _read_manifest(entities_dir)
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # Update entities list
+    entry = {
+        "entityName": entity_name,
+        "entityId":   entity_id,
+        "file":       filename,
+        "operation":  operation,
+        "branch":     branch,
+        "sourceBranch": source_branch or branch,
+        "timestamp":  now,
+    }
+    # Remove any existing entry for this entity+branch combo
+    manifest["entities"] = [
+        e for e in manifest["entities"]
+        if not (e["entityId"] == entity_id and e["branch"] == branch)
+    ]
+    manifest["entities"].append(entry)
+
+    # Update branch_map: branch -> [entity ids]
+    if branch not in manifest["branch_map"]:
+        manifest["branch_map"][branch] = []
+    if entity_id not in manifest["branch_map"][branch]:
+        manifest["branch_map"][branch].append(entity_id)
+
+    return _write_manifest(entities_dir, manifest)
+
+
+def _print_manifest(entities_dir: str) -> None:
+    """Print a human-readable summary of the manifest."""
+    manifest = _read_manifest(entities_dir)
+    if not manifest["entities"]:
+        print("  (manifest is empty)")
+        return
+
+    print(f"\n  {'BRANCH':<40} {'ENTITY':<35} {'ID':<40} {'OP':<8} {'SOURCE BRANCH'}")
+    print(f"  {'-'*40} {'-'*35} {'-'*40} {'-'*8} {'-'*30}")
+    for e in sorted(manifest["entities"], key=lambda x: (x["branch"], x["timestamp"])):
+        src = e.get("sourceBranch", e["branch"])
+        src_display = f"← {src}" if src != e["branch"] else "(this branch)"
+        print(f"  {e['branch']:<40} {e['entityName']:<35} {e['entityId']:<40} {e['operation']:<8} {src_display}")
+
+
+# ---------------------------------------------------------------------------
 # Combined flow helpers
 # ---------------------------------------------------------------------------
 
@@ -216,13 +314,15 @@ def _commit_entity_to_branch(
     repo_path = repo_path or agent_config.REPO_PATH
     base = base_branch or _default_branch(repo_path)
 
-    print(f"\n[bridge] Creating branch '{branch_name}' from '{base}'...")
-    branch_result = run_agent_query(
-        f"create branch {branch_name} from {base}",
-        max_steps=max_steps,
-    )
-    if not branch_result.get("done"):
-        print("[bridge] WARNING: branch creation did not finish cleanly.")
+    # Create or reuse branch directly
+    _, code = _run_git(["rev-parse", "--verify", branch_name], repo_path)
+    if code == 0:
+        print(f"\n[bridge] Branch '{branch_name}' already exists — using it.")
+    else:
+        print(f"\n[bridge] Creating branch '{branch_name}' from '{base}'...")
+        out, code = _run_git(["checkout", "-b", branch_name, base], repo_path)
+        if code != 0:
+            raise RuntimeError(f"Could not create '{branch_name}': {out}")
 
     print(f"[bridge] Checking out '{branch_name}'...")
     out, code = _run_git(["checkout", branch_name], repo_path)
@@ -240,13 +340,16 @@ def _commit_entity_to_branch(
         json.dump(backend_result, fh, indent=2)
     print(f"[bridge] Wrote entity file: {filepath}")
 
-    out, code = _run_git(["add", filepath], repo_path)
+    # Update manifest
+    manifest_path = _update_manifest(
+        entities_dir, entity_name, entity_id, branch_name, filename, operation="create"
+    )
+    print(f"[bridge] Updated manifest: {manifest_path}")
+
+    out, code = _run_git(["add", filepath, manifest_path], repo_path)
     if code != 0:
         raise RuntimeError(f"git add failed: {out}")
 
-    # Commit directly via git (not via the agent) to avoid the agent
-    # misinterpreting the commit message as a branch/ref name and creating
-    # stray folders like "agent~commit initial-commit".
     commit_message = f"feat({entity_name}): add {entity_id} from backend"
     print(f"[bridge] Committing: {commit_message}")
     out, code = _run_git(["commit", "-m", commit_message], repo_path)
@@ -406,27 +509,120 @@ def _run_collect_flow(args: argparse.Namespace) -> int:
 
         for h in hashes_to_pick:
             short = h[:7]
-            print(f"  → cherry-pick {short}...")
-            out, code = _run_git(["cherry-pick", h], repo_path)
+            print(f"  → cherry-pick {short} from '{branch}'...")
+
+            # Get the original commit message before cherry-picking
+            orig_msg, _ = _run_git(
+                ["log", "-1", "--format=%s", h], repo_path
+            )
+
+            # Cherry-pick without auto-committing so we can rewrite the message
+            out, code = _run_git(["cherry-pick", "--no-commit", h], repo_path)
             if code != 0:
-                # Check if it's just "nothing to commit" (already applied)
-                if "nothing to commit" in out or "already applied" in out.lower() or "empty commit" in out.lower():
+                if "nothing to commit" in out or "already applied" in out.lower():
                     print(f"    (already applied, skipping)")
-                    _run_git(["cherry-pick", "--skip"], repo_path)
+                    _run_git(["cherry-pick", "--abort"], repo_path)
                     continue
                 print(f"  ERROR cherry-picking {short}: {out}")
-                print(f"  Aborting cherry-pick and continuing to next branch.")
+                print(f"  Aborting and continuing to next branch.")
                 _run_git(["cherry-pick", "--abort"], repo_path)
+                # Reset working tree to clean state
+                _run_git(["reset", "--hard", "HEAD"], repo_path)
                 break
+
+            # Commit with source branch + original hash embedded in message
+            new_msg = (
+                f"{orig_msg}\n\n"
+                f"cherry-picked-from: {branch} ({short})"
+            )
+            commit_out, commit_code = _run_git(
+                ["commit", "-m", new_msg], repo_path
+            )
+            if commit_code != 0:
+                if "nothing to commit" in commit_out:
+                    print(f"    (nothing new to commit, skipping)")
+                    continue
+                print(f"  ERROR committing {short}: {commit_out}")
+                break
+
+            # Update manifest for every entity file touched by this commit
+            diff_out, _ = _run_git(
+                ["diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"],
+                repo_path,
+            )
+            entities_dir = os.path.join(repo_path, args.output_dir)
+            os.makedirs(entities_dir, exist_ok=True)
+            for changed_file in diff_out.splitlines():
+                changed_file = changed_file.strip()
+                if changed_file.endswith(".json") and args.output_dir in changed_file \
+                        and MANIFEST_FILENAME not in changed_file:
+                    fname = os.path.basename(changed_file)
+                    # Parse EntityName_entityId.json
+                    parts = fname.replace(".json", "").split("_", 1)
+                    e_name = parts[0] if len(parts) > 0 else "Unknown"
+                    e_id   = parts[1] if len(parts) > 1 else fname
+                    _update_manifest(
+                        entities_dir, e_name, e_id, target,
+                        fname, operation="cherry-pick", source_branch=branch,
+                    )
+
+            # Stage updated manifest and amend commit
+            manifest_path = os.path.join(entities_dir, MANIFEST_FILENAME)
+            if os.path.exists(manifest_path):
+                _run_git(["add", manifest_path], repo_path)
+                _run_git(["commit", "--amend", "--no-edit"], repo_path)
+
+            print(f"    ✓ committed with source: {branch} ({short})")
 
     # ---- Step 4: verify final state -----------------------------------------
     print(f"\n[collect] Done. Final commits on '{target}':")
-    log_out, _ = _run_git(["log", target, "--oneline", "--no-decorate", "-10"], repo_path)
+    log_out, _ = _run_git(
+        ["log", target, "--no-decorate", "-20",
+         "--format=  %h | %s | %b"],
+        repo_path,
+    )
     print(log_out or "(no commits)")
+
+    # Parse and display source branch origins from commit messages
+    print(f"\n[collect] Commit origin summary for '{target}':")
+    log_full, _ = _run_git(
+        ["log", target, "--no-decorate", "-20", "--format=%h%n%B%n---END---"],
+        repo_path,
+    )
+    origin_lines = []
+    current_hash = None
+    current_body = []
+    for line in log_full.splitlines():
+        if not current_hash:
+            current_hash = line.strip()
+            continue
+        if line == "---END---":
+            body = "\n".join(current_body)
+            origin = None
+            for bline in current_body:
+                if bline.startswith("cherry-picked-from:"):
+                    origin = bline.replace("cherry-picked-from:", "").strip()
+                    break
+            subject = current_body[0] if current_body else "(no message)"
+            if origin:
+                origin_lines.append(f"  {current_hash} | {subject} | from: {origin}")
+            else:
+                origin_lines.append(f"  {current_hash} | {subject} | origin: this branch")
+            current_hash = None
+            current_body = []
+        else:
+            current_body.append(line)
+
+    print("\n".join(origin_lines) if origin_lines else "(could not parse)")
 
     print(f"\n[collect] Entity files on '{target}':")
     ls_out, _ = _run_git(["ls-tree", "-r", "--name-only", target, "entities"], repo_path)
     print(ls_out or "(no entity files)")
+
+    # Show manifest — the source-of-truth for which entities came from where
+    print(f"\n[collect] Entity → Branch manifest:")
+    entities_dir = os.path.join(repo_path, args.output_dir)
+    _print_manifest(entities_dir)
 
     print(f"\n✓ collect flow complete. Branch '{target}' is ready.")
     return 0
@@ -442,6 +638,22 @@ def main() -> int:
         return 0
 
     args = parse_args()
+
+    # MANIFEST — show entity→branch tracking table
+    if args.flow == "manifest":
+        entities_dir = os.path.join(agent_config.REPO_PATH, args.output_dir)
+        manifest = _read_manifest(entities_dir)
+        if not manifest["entities"]:
+            print("No entities tracked yet. Run combined flow first.")
+            return 0
+        print(f"\n{'='*130}")
+        print(f"  ENTITY MANIFEST  —  {os.path.join(entities_dir, MANIFEST_FILENAME)}")
+        print(f"{'='*130}")
+        _print_manifest(entities_dir)
+        print(f"\n  Branch summary:")
+        for branch, ids in sorted(manifest["branch_map"].items()):
+            print(f"    {branch}: {len(ids)} entity/entities → {', '.join(ids)}")
+        return 0
 
     # BACKEND only
     if args.flow == "backend":

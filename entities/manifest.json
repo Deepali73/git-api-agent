@@ -17,12 +17,44 @@
       "branch": "feature/test-dev1-base3",
       "sourceBranch": "feature/test-dev1-base3",
       "timestamp": "2026-06-29T05:56:13.799823Z"
+    },
+    {
+      "entityName": "ValueType",
+      "entityId": "customer04_ecom_valueType",
+      "file": "ValueType_customer04_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities05",
+      "sourceBranch": "feature/ecom-entities05",
+      "timestamp": "2026-06-29T09:25:19.633280Z"
+    },
+    {
+      "entityName": "ValueType",
+      "entityId": "product04_ecom_valueType",
+      "file": "ValueType_product04_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities05",
+      "sourceBranch": "feature/ecom-entities05",
+      "timestamp": "2026-06-29T09:25:19.815860Z"
+    },
+    {
+      "entityName": "ValueType",
+      "entityId": "order04_ecom_valueType",
+      "file": "ValueType_order04_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities05",
+      "sourceBranch": "feature/ecom-entities05",
+      "timestamp": "2026-06-29T09:25:19.956893Z"
     }
   ],
   "branch_map": {
     "feature/test-dev1-base3": [
       "testBranch3_ecom_valueType",
       "unknown"
+    ],
+    "feature/ecom-entities05": [
+      "customer04_ecom_valueType",
+      "product04_ecom_valueType",
+      "order04_ecom_valueType"
     ]
   }
 }

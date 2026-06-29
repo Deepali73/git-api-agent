@@ -1,0 +1,18 @@
+{
+  "entities": [
+    {
+      "entityName": "ValueType",
+      "entityId": "testBranch3_ecom_valueType",
+      "file": "ValueType_testBranch3_ecom_valueType.json",
+      "operation": "create",
+      "branch": "feature/test-dev1-base3",
+      "sourceBranch": "feature/test-dev1-base3",
+      "timestamp": "2026-06-29T05:51:45.236058Z"
+    }
+  ],
+  "branch_map": {
+    "feature/test-dev1-base3": [
+      "testBranch3_ecom_valueType"
+    ]
+  }
+}

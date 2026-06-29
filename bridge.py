@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--flow",
-        choices=["backend", "git", "combined", "collect", "manifest"],
+        choices=["backend", "git", "combined", "collect", "manifest", "bulk"],
         default="combined",
         help="Which flow to run (default: combined).",
     )
@@ -101,6 +101,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--git-query", help="Raw query for git-only flow.")
     parser.add_argument("--max-steps", type=int, default=15)
     parser.add_argument("--print-full-state", action="store_true")
+
+    # Bulk flow args
+    parser.add_argument(
+        "--entity-ids",
+        nargs="+",
+        metavar="ID",
+        help=(
+            "bulk flow: list of existing entity IDs to read from backend and "
+            "commit into --branch. e.g. --entity-ids customer_ecom_valueType product_ecom_valueType"
+        ),
+    )
 
     # Collect flow args
     parser.add_argument(
@@ -651,12 +662,137 @@ def _run_collect_flow(args: argparse.Namespace) -> int:
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Bulk flow — read multiple existing entities and commit all into one branch
+# ---------------------------------------------------------------------------
+
+def _run_bulk_flow(args: argparse.Namespace) -> int:
+    """
+    Reads a list of already-created entity IDs from the backend and commits
+    all of them into a single branch in one go.
+
+    Usage:
+        python bridge.py --flow bulk
+            --entity ValueType
+            --entity-ids customer_ecom_valueType product_ecom_valueType order_ecom_valueType
+            --branch feature/ecom-entities
+    """
+    if not args.entity:
+        print("Error: --entity is required for bulk flow.")
+        return 1
+    if not args.entity_ids:
+        print("Error: --entity-ids is required for bulk flow.")
+        return 1
+    if not args.branch:
+        print("Error: --branch is required for bulk flow.")
+        return 1
+
+    from python.backend_client import BackendApiClient, BackendApiError
+    client = BackendApiClient()
+
+    repo_path = agent_config.REPO_PATH
+    base      = args.base_branch or _default_branch(repo_path)
+    branch    = args.branch
+
+    print(f"\n[bulk] Entity type  : {args.entity}")
+    print(f"[bulk] Entity IDs   : {args.entity_ids}")
+    print(f"[bulk] Target branch: {branch}")
+    print(f"[bulk] Base branch  : {base}")
+
+    # Step 1 — create or reuse branch
+    _, code = _run_git(["rev-parse", "--verify", branch], repo_path)
+    if code == 0:
+        print(f"\n[bulk] Branch '{branch}' already exists — using it.")
+        out, code = _run_git(["checkout", branch], repo_path)
+    else:
+        print(f"\n[bulk] Creating branch '{branch}' from '{base}'...")
+        out, code = _run_git(["checkout", "-b", branch, base], repo_path)
+    if code != 0:
+        print(f"[bulk] ERROR: could not checkout '{branch}': {out}")
+        return 1
+    print(f"[bulk] On branch '{branch}'. ✓")
+
+    entities_dir = os.path.join(repo_path, args.output_dir)
+    os.makedirs(entities_dir, exist_ok=True)
+
+    committed = []
+    failed    = []
+
+    # Step 2 — for each ID: read from backend, write file, stage
+    for entity_id in args.entity_ids:
+        print(f"\n[bulk] Reading {args.entity} '{entity_id}' from backend...")
+        try:
+            entity_data = client.read(args.entity, entity_id)
+        except BackendApiError as e:
+            print(f"  ERROR reading '{entity_id}': {e.data or e}")
+            failed.append(entity_id)
+            continue
+
+        filename = f"{args.entity}_{entity_id}.json"
+        filepath = os.path.join(entities_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as fh:
+            json.dump(entity_data, fh, indent=2)
+        print(f"  Wrote: {filepath}")
+
+        # Update manifest
+        _update_manifest(
+            entities_dir, args.entity, entity_id,
+            branch, filename, operation="bulk-import",
+        )
+
+        out, code = _run_git(["add", filepath], repo_path)
+        if code != 0:
+            print(f"  ERROR staging '{filename}': {out}")
+            failed.append(entity_id)
+            continue
+
+        committed.append(entity_id)
+
+    if not committed:
+        print("\n[bulk] Nothing to commit — all entities failed to read.")
+        return 1
+
+    # Step 3 — stage manifest and commit everything in one commit
+    manifest_path = os.path.join(entities_dir, MANIFEST_FILENAME)
+    _run_git(["add", manifest_path], repo_path)
+
+    ids_str = ", ".join(committed)
+    commit_msg = f"feat({args.entity}): bulk import [{ids_str}]"
+    print(f"\n[bulk] Committing {len(committed)} entities: {commit_msg}")
+    out, code = _run_git(["commit", "-m", commit_msg], repo_path)
+    if code != 0:
+        print(f"[bulk] ERROR committing: {out}")
+        return 1
+    print(f"[bulk] Committed: {out.splitlines()[0]}")
+
+    # Step 4 — return to default branch
+    print(f"\n[bulk] Switching back to '{base}'...")
+    _run_git(["checkout", base], repo_path)
+    print(f"[bulk] Now on '{base}'. ✓")
+
+    # Summary
+    print(f"\n✓ Bulk import complete.")
+    print(f"  Committed : {committed}")
+    if failed:
+        print(f"  Failed    : {failed}")
+
+    print(f"\n[bulk] Entity files on '{branch}':")
+    ls_out, _ = _run_git(["ls-tree", "-r", "--name-only", branch, "entities"], repo_path)
+    print(ls_out or "(none)")
+
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) == 1:
         parse_args()
         return 0
 
     args = parse_args()
+
+    # BULK — read existing entities and commit all into one branch
+    if args.flow == "bulk":
+        return _run_bulk_flow(args)
 
     # MANIFEST — show entity→branch tracking table
     if args.flow == "manifest":

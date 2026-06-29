@@ -1,0 +1,38 @@
+{
+  "entities": [
+    {
+      "entityName": "ValueType",
+      "entityId": "customer01_ecom_valueType",
+      "file": "ValueType_customer01_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities",
+      "sourceBranch": "feature/ecom-entities",
+      "timestamp": "2026-06-29T06:23:44.438322Z"
+    },
+    {
+      "entityName": "ValueType",
+      "entityId": "product01_ecom_valueType",
+      "file": "ValueType_product01_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities",
+      "sourceBranch": "feature/ecom-entities",
+      "timestamp": "2026-06-29T06:23:44.572360Z"
+    },
+    {
+      "entityName": "ValueType",
+      "entityId": "orde011_ecom_valueType",
+      "file": "ValueType_orde011_ecom_valueType.json",
+      "operation": "bulk-import",
+      "branch": "feature/ecom-entities",
+      "sourceBranch": "feature/ecom-entities",
+      "timestamp": "2026-06-29T06:23:44.698376Z"
+    }
+  ],
+  "branch_map": {
+    "feature/ecom-entities": [
+      "customer01_ecom_valueType",
+      "product01_ecom_valueType",
+      "orde011_ecom_valueType"
+    ]
+  }
+}
